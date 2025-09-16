@@ -1,13 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, ActivityIndicator, Dimensions } from 'react-native';
+import { StyleSheet, Text, View, ActivityIndicator } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import axios from 'axios';
 
 const CALLOUT_WIDTH = 220;
-const MIN_CALLOUT_HEIGHT = 140; // Increased height to fit more data
+const MIN_CALLOUT_HEIGHT = 120;
 
-// --- NEW HELPER FUNCTION ---
-// This function converts a wind direction from degrees (e.g., 270) to a cardinal direction (e.g., "W")
 const degreesToCardinal = (deg) => {
   if (deg == null) return null;
   const directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
@@ -21,17 +19,24 @@ export default function App() {
   const mapRef = useRef(null);
 
   useEffect(() => {
-    const fetchStations = async () => {
+    const fetchAndFilterStations = async () => {
       try {
-        const response = await axios.get('https://api.weather.gov/stations?limit=500');
-        setStations(response.data.features);
+        // --- THE FIX: Changed limit from 5000 to 2000 ---
+        const response = await axios.get('https://api.weather.gov/stations?limit=2000');
+        
+        const majorStations = response.data.features.filter(station => {
+          const id = station.properties.stationIdentifier;
+          return id && /^K[A-Z]{3}$/.test(id);
+        });
+
+        setStations(majorStations);
       } catch (e) {
         console.error("Failed to fetch station data:", e);
       } finally {
         setLoading(false);
       }
     };
-    fetchStations();
+    fetchAndFilterStations();
   }, []);
 
   const handleMarkerPress = async (station) => {
@@ -50,12 +55,8 @@ export default function App() {
       if (response.data && response.data.properties && response.data.properties.temperature.value != null) {
           const props = response.data.properties;
           
-          // --- EXTRACT AND CONVERT NEW DATA ---
-          // Wind speed: Convert meters/sec to mph and round. Use optional chaining (?.) for safety.
           const windSpeedMph = props.windSpeed?.value != null ? Math.round(props.windSpeed.value * 2.237) : null;
-          // Wind direction: Use our helper function
           const windDirectionCardinal = degreesToCardinal(props.windDirection?.value);
-          // Humidity: Round to nearest whole number
           const humidity = props.relativeHumidity?.value != null ? Math.round(props.relativeHumidity.value) : null;
 
           setCalloutData({
@@ -103,7 +104,10 @@ export default function App() {
               key={station.properties.stationIdentifier}
               coordinate={{ latitude, longitude }}
               onPress={() => handleMarkerPress(station)}
-            />
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <View style={styles.markerDot} />
+            </Marker>
           );
         })}
       </MapView>
@@ -124,12 +128,6 @@ export default function App() {
           {calloutData.weather && (
             <View>
               <Text style={styles.calloutText}>Temp: {calloutData.weather.temp} °F</Text>
-              {calloutData.weather.conditions ? (
-                <Text style={styles.calloutText}>Conditions: {calloutData.weather.conditions}</Text>
-              ) : (
-                <Text style={styles.calloutText}>Conditions: Not available</Text>
-              )}
-              {/* --- DISPLAY NEW DATA --- */}
               {calloutData.weather.windSpeed != null && (
                 <Text style={styles.calloutText}>
                   Wind: {calloutData.weather.windSpeed} mph from the {calloutData.weather.windDirection}
@@ -149,6 +147,14 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  markerDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: 'rgba(0, 122, 255, 0.5)',
+    borderColor: 'white',
+    borderWidth: 1,
   },
   customCallout: {
     position: 'absolute',
@@ -172,6 +178,6 @@ const styles = StyleSheet.create({
   },
   calloutText: {
     fontSize: 14,
-    marginBottom: 2, // Add a little space between lines
+    marginBottom: 2,
   }
 });
